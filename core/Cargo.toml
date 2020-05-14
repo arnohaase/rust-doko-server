@@ -1,0 +1,9 @@
+[package]
+name = "doko-server"
+version = "0.1.0"
+authors = ["Arno Haase <arno.haase@haase-consulting.com>"]
+edition = "2018"
+
+
+[dependencies]
+rand = "0.7"
