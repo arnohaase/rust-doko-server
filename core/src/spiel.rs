@@ -83,7 +83,7 @@ impl Spiel {
         use rand::thread_rng;
         use rand::seq::SliceRandom;
         let mut kartensatz = regel_registry.variante.kartensatz();
-        (&mut kartensatz).shuffle(&mut thread_rng()); //TODO Seed zum Reproduzieren?
+        kartensatz.shuffle(&mut thread_rng()); //TODO Seed zum Reproduzieren?
 
         let mut chunks = kartensatz.chunks(kartensatz.len()/4);
         let k1 = chunks.next().unwrap().to_vec();
@@ -213,7 +213,7 @@ impl Spiel {
                 else {
                     // Stich ist komplett --> wer bekommt ihn?
 
-                    // 'naechster_spieler' ist wieder der Spieler, der die erste Karte des Stichs gespielt hat
+                    // 'naechster_spieler' ist jetzt wieder der Spieler, der die erste Karte des Stichs gespielt hat
 
                     let mut hoechster_idx = 0usize;
                     let mut hoechste_karte = *self.aktueller_stich.first().unwrap();
