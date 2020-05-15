@@ -12,6 +12,7 @@ use std::ops::Add;
 pub struct SpielerNummer {
     pub idx: u8,
 }
+
 impl SpielerNummer {
     pub fn naechster(&self) -> SpielerNummer {
         SpielerNummer { idx: (self.idx + 1) & 3 }
@@ -72,7 +73,45 @@ pub enum SpielerAktionError {
     AnsageErhoehtNicht,
 }
 
-pub struct Spiel  {
+struct Stich {
+    aufgespielt_von: SpielerNummer,
+    karten: Vec<Karte>,
+    gewonnen_von: SpielerNummer,
+}
+impl Stich {
+    pub fn new(aufgespielt_von: SpielerNummer) -> Stich {
+        Stich {
+            aufgespielt_von,
+            karten: vec![],
+            gewonnen_von: aufgespielt_von, // beliebiger Wert - hat erst Bedeutung, wenn der Stich fertig ist
+        }
+    }
+
+    pub fn naechster_spieler(&self) -> SpielerNummer {
+        self.aufgespielt_von + self.karten.len()
+    }
+
+    pub fn is_komplett(&self) -> bool {
+        self.karten.len() == 4
+    }
+}
+
+pub enum SpielPhase {
+    Vorbehalte {
+
+    },
+    //TODO Ausspielen einer Hochzeit
+    Laufend {
+
+    },
+    Abgeschlossen {
+
+    }
+}
+
+
+
+pub struct Spiel {
     regelsatz: Box<dyn Regelsatz>,
     regelsatz_registry: Arc<RegelsatzRegistry>,
 
@@ -97,12 +136,9 @@ pub struct Spiel  {
     erster_spieler: SpielerNummer,
     journal: Vec<SpielerAktion>,
     handkarten: [Vec<Karte>;4],
-    /// abgelegte Karten sind nicht mehr nach Stichen gruppiert, sondern einfach ein Vec je Spieler
-    stiche: [Vec<Karte>;4],
+    stiche: Vec<Stich>,
 
-    /// direkt nach einem Stich der Spieler, der den Stich bekommen hat, ansonsten im Stich der 'nächste' Spieler in der Reihenfolge
-    naechster_spieler: SpielerNummer,
-    aktueller_stich: Vec<Karte>,
+    aktueller_stich: Stich,
 }
 
 impl Spiel {
@@ -111,6 +147,7 @@ impl Spiel {
 
     pub fn new(regel_registry: Arc<RegelsatzRegistry>, erster_spieler: u8) -> Spiel {
         assert!(erster_spieler < 4);
+        let erster_spieler = SpielerNummer {idx: erster_spieler};
 
         use rand::thread_rng;
         use rand::seq::SliceRandom;
@@ -146,12 +183,11 @@ impl Spiel {
 
             gefangene_fuechse: [vec![], vec![], vec![], vec![]],
 
-            erster_spieler: SpielerNummer {idx: erster_spieler},
+            erster_spieler,
             journal: vec![],
             handkarten: [k1, k2, k3, k4],
-            stiche: [vec![], vec![], vec![], vec![]],
-            naechster_spieler: SpielerNummer {idx: erster_spieler},
-            aktueller_stich: vec![]
+            stiche: vec![],
+            aktueller_stich: Stich::new(erster_spieler),
         }
     }
 
@@ -167,9 +203,9 @@ impl Spiel {
         }
     }
 
-    fn naechster_spieler(&mut self) {
-        self.naechster_spieler = self.naechster_spieler.naechster();
-    }
+    // fn naechster_spieler(&mut self) {
+    //     self.naechster_spieler = self.naechster_spieler.naechster();
+    // }
 
     fn push_aktion(&mut self, aktion: SpielerAktion) -> Result<(), SpielerAktionError> {
         self.journal.push(aktion);
@@ -208,7 +244,7 @@ impl Spiel {
     }
 
     fn check_an_der_reihe(&self, spieler: SpielerNummer) -> Result<(), SpielerAktionError> {
-        if spieler == self.naechster_spieler {
+        if spieler == self.aktueller_stich.naechster_spieler() {
             Ok(())
         }
         else {
@@ -251,25 +287,19 @@ impl Spiel {
                 handkarten.remove(idx);
 
                 self.aktueller_stich.push(karte);
-
-                self.naechster_spieler();
                 self.anzahl_gespielte_karten += 1;
 
-                if self.aktueller_stich.len() < 4 {
-                    self.push_aktion(aktion)
-                }
-                else {
-                    // Stich ist komplett --> wer bekommt ihn?
-
-                    // 'naechster_spieler' ist jetzt wieder der Spieler, der die erste Karte des Stichs gespielt hat
+                self.push_aktion(aktion);
+                if self.aktueller_stich.is_komplett() {
+                    // wer bekommt den Stich?
 
                     let mut hoechster_idx = 0usize;
                     let mut hoechste_karte = *self.aktueller_stich.first().unwrap();
 
                     for i in 1..4 {
-                        if self.regelsatz.ist_hoeher_als(hoechste_karte, *self.aktueller_stich.get(i).unwrap()) {
+                        if self.regelsatz.ist_hoeher_als(hoechste_karte, *self.aktueller_stich.karten.get(i).unwrap()) {
                             hoechster_idx = i;
-                            hoechste_karte = *self.aktueller_stich.get(i).unwrap();
+                            hoechste_karte = *self.aktueller_stich.karten.get(i).unwrap();
                         }
                     }
 
