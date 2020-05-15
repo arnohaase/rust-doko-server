@@ -131,6 +131,11 @@ impl Spiel {
         self.naechster_spieler = self.naechster_spieler.naechster();
     }
 
+    fn push_aktion(&mut self, aktion: SpielerAktion) -> Result<(), SpielerAktionError> {
+        self.journal.push(aktion);
+        Ok(())
+    }
+
     fn spieler_aktion_solo_ansagen(&mut self, aktion: SpielerAktion) -> Result<(),SpielerAktionError> {
         match aktion {
             SpielerAktion::Solo(spieler, Some(solo_art)) => {
@@ -145,7 +150,7 @@ impl Spiel {
                 self.is_re = [false, false, false, false];
                 self.is_re[spieler.as_usize()] = true;
 
-                Ok(())
+                self.push_aktion(aktion)
             }
             SpielerAktion::Solo(spieler, None) => {
                 self.check_an_der_reihe(spieler)?;
@@ -153,7 +158,7 @@ impl Spiel {
                 if self.naechster_spieler == self.erster_spieler {
                     self.solo_ansagen_vorbei = true;
                 }
-                Ok(())
+                self.push_aktion(aktion)
             },
             _ => {
                 Err(SoloAnsagenNochNichtVorbei)
@@ -208,7 +213,7 @@ impl Spiel {
 
                 self.naechster_spieler();
                 if self.aktueller_stich.len() < 4 {
-                    Ok(())
+                    self.push_aktion(aktion)
                 }
                 else {
                     // Stich ist komplett --> wer bekommt ihn?
@@ -235,7 +240,7 @@ impl Spiel {
                         self.is_spiel_beendet = true;
                     }
 
-                    Ok(())
+                    self.push_aktion(aktion)
                 }
             },
             _ => {
@@ -243,6 +248,8 @@ impl Spiel {
             }
         }
     }
+
+    //TODO Auszählung der Karten, Zusammenzählen je Partei, Punktzahl
 
     fn karten_summe(&self, spieler: SpielerNummer) -> u32 {
         let mut result = 0u32;
