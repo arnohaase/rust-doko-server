@@ -45,7 +45,7 @@ impl AnsageHoehe {
             Keine90=> 90,
             Keine60 => 60,
             Keine30 => 30,
-            Schwarz => 0,
+            Schwarz => 1,
         }
     }
 }
@@ -384,13 +384,16 @@ impl Spiel {
         let kartensumme_re = self.karten_summe_re();
         let kartensumme_contra = self.karten_summe_contra();
 
-        let hat_re_gewonnen = hat_re_gewonnen(kartensumme_re, self.ansage_re, self.ansage_contra);
+        let hat_re_gewonnen = hat_re_gewonnen(kartensumme_re, kartensumme_contra, self.ansage_re, self.ansage_contra);
 
         let mut punkte = Spiel::punkte_durch_ansagen(self.ansage_re)
           + Spiel::punkte_durch_ansagen(self.ansage_contra);
         if !hat_re_gewonnen {
             punkte += 1;
         }
+
+        //TODO Punkte für kartensumme
+        //TODO Sonderpunkte
 
         let mut punkte_re = 0i32;
         let mut punkte_contra = 0i32;
@@ -469,8 +472,30 @@ impl Spiel {
     }
 }
 
-fn hat_re_gewonnen(kartensumme_re: u32, ansage_re: Option<AnsageHoehe>, ansage_contra: Option<AnsageHoehe>) -> bool {
-    true //TODO
+fn hat_re_gewonnen(kartensumme_re: u32, kartensumme_contra: u32, ansage_re: Option<AnsageHoehe>, ansage_contra: Option<AnsageHoehe>) -> bool {
+    assert!(kartensumme_re + kartensumme_contra == 240);
+
+    match (ansage_re, ansage_contra) {
+        (None, None) => kartensumme_re > 120,
+        (Some(AnsageHoehe::Sieg), None) => kartensumme_re > 120,
+        (None, Some(AnsageHoehe::Sieg)) => kartensumme_re > 120,
+        (Some(AnsageHoehe::Sieg), Some(AnsageHoehe::Sieg)) => kartensumme_re > 120,
+        (Some(hoehe), None) => {
+            kartensumme_contra < hoehe.limit()
+        },
+        (Some(hoehe), Some(AnsageHoehe::Sieg)) => {
+            kartensumme_contra < hoehe.limit()
+        },
+        (None, Some(hoehe)) => {
+            kartensumme_re >= hoehe.limit()
+        },
+        (Some(AnsageHoehe::Sieg), Some(hoehe)) => {
+            kartensumme_re >= hoehe.limit()
+        },
+        (Some(hoehe_re), Some(hoehe_contra)) => {
+            true  //TODO wie sind hier die Regeln?
+        }
+    }
 }
 
 pub struct SpielErgebnis {
@@ -486,4 +511,147 @@ pub struct SpielErgebnis {
 
     pub punkte_re: i32,
     pub punkte_contra: i32,
+}
+
+#[cfg(test)]
+mod test {
+    use crate::spiel::{hat_re_gewonnen, AnsageHoehe};
+
+    #[test]
+    pub fn test_hat_re_gewonnen_ohne_ansage() {
+        assert_eq!(true, hat_re_gewonnen(240, 0, None, None));
+        assert_eq!(true, hat_re_gewonnen(155, 85, None, None));
+        assert_eq!(true, hat_re_gewonnen(121, 119, None, None));
+        assert_eq!(false, hat_re_gewonnen(120, 120, None, None));
+        assert_eq!(false, hat_re_gewonnen(119, 121, None, None));
+        assert_eq!(false, hat_re_gewonnen(41, 199, None, None));
+        assert_eq!(false, hat_re_gewonnen(0, 240, None, None));
+    }
+
+    #[test]
+    pub fn test_hat_re_gewonnen_ansage_re() {
+        _test_hat_re_gewonnen_ansage_re(None);
+    }
+    #[test]
+    pub fn test_hat_re_gewonnen_ansage_re_mit_contra_sieg() {
+        _test_hat_re_gewonnen_ansage_re(Some(AnsageHoehe::Sieg));
+    }
+
+    fn _test_hat_re_gewonnen_ansage_re(ansage_contra: Option<AnsageHoehe>) {
+        use AnsageHoehe::*;
+
+        assert_eq!(true, hat_re_gewonnen(240, 0, Some(Sieg), ansage_contra));
+        assert_eq!(true, hat_re_gewonnen(155, 85, Some(Sieg), ansage_contra));
+        assert_eq!(true, hat_re_gewonnen(121, 119, Some(Sieg), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(120, 120, Some(Sieg), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(119, 121, Some(Sieg), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(41, 199, Some(Sieg), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(0, 240, Some(Sieg), ansage_contra));
+
+        assert_eq!(true, hat_re_gewonnen(240, 0, Some(Keine90), ansage_contra));
+        assert_eq!(true, hat_re_gewonnen(151, 89, Some(Keine90), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(150, 90, Some(Keine90), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(121, 119, Some(Keine90), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(120, 120, Some(Keine90), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(119, 121, Some(Keine90), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(41, 199, Some(Keine90), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(0, 240, Some(Keine90), ansage_contra));
+
+        assert_eq!(true, hat_re_gewonnen(240, 0, Some(Keine60), ansage_contra));
+        assert_eq!(true, hat_re_gewonnen(181, 59, Some(Keine60), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(180, 60, Some(Keine60), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(155, 85, Some(Keine60), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(121, 119, Some(Keine60), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(120, 120, Some(Keine60), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(119, 121, Some(Keine60), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(41, 199, Some(Keine60), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(0, 240, Some(Keine60), ansage_contra));
+
+        assert_eq!(true, hat_re_gewonnen(240, 0, Some(Keine30), ansage_contra));
+        assert_eq!(true, hat_re_gewonnen(211, 29, Some(Keine30), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(210, 30, Some(Keine30), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(185, 55, Some(Keine30), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(155, 85, Some(Keine30), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(121, 119, Some(Keine30), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(120, 120, Some(Keine30), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(119, 121, Some(Keine30), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(41, 199, Some(Keine30), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(0, 240, Some(Keine30), ansage_contra));
+
+        assert_eq!(true, hat_re_gewonnen(240, 0, Some(Schwarz), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(239, 1, Some(Schwarz), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(215, 25, Some(Schwarz), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(185, 55, Some(Schwarz), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(155, 85, Some(Schwarz), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(121, 119, Some(Schwarz), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(120, 120, Some(Schwarz), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(119, 121, Some(Schwarz), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(41, 199, Some(Schwarz), ansage_contra));
+        assert_eq!(false, hat_re_gewonnen(0, 240, Some(Schwarz), ansage_contra));
+    }
+
+    #[test]
+    pub fn test_hat_re_gewonnen_ansage_contra() {
+        _test_hat_re_gewonnen_ansage_contra(None);
+    }
+    #[test]
+    pub fn test_hat_re_gewonnen_ansage_contra_mit_re_sieg() {
+        _test_hat_re_gewonnen_ansage_contra(Some(AnsageHoehe::Sieg));
+    }
+
+    fn _test_hat_re_gewonnen_ansage_contra(ansage_re: Option<AnsageHoehe>) {
+        use AnsageHoehe::*;
+
+        assert_eq!(true, hat_re_gewonnen(240, 0, ansage_re, Some(Sieg)));
+        assert_eq!(true, hat_re_gewonnen(155, 85, ansage_re, Some(Sieg)));
+        assert_eq!(true, hat_re_gewonnen(121, 119, ansage_re, Some(Sieg)));
+        assert_eq!(false, hat_re_gewonnen(120, 120, ansage_re, Some(Sieg)));
+        assert_eq!(false, hat_re_gewonnen(119, 121, ansage_re, Some(Sieg)));
+        assert_eq!(false, hat_re_gewonnen(41, 199, ansage_re, Some(Sieg)));
+        assert_eq!(false, hat_re_gewonnen(0, 240, ansage_re, Some(Sieg)));
+
+        assert_eq!(true, hat_re_gewonnen(240, 0, ansage_re, Some(Keine90)));
+        assert_eq!(true, hat_re_gewonnen(155, 85, ansage_re, Some(Keine90)));
+        assert_eq!(true, hat_re_gewonnen(121, 119, ansage_re, Some(Keine90)));
+        assert_eq!(true, hat_re_gewonnen(120, 120, ansage_re, Some(Keine90)));
+        assert_eq!(true, hat_re_gewonnen(119, 121, ansage_re, Some(Keine90)));
+        assert_eq!(true, hat_re_gewonnen(90, 150, ansage_re, Some(Keine90)));
+        assert_eq!(false, hat_re_gewonnen(89, 151, ansage_re, Some(Keine90)));
+        assert_eq!(false, hat_re_gewonnen(41, 199, ansage_re, Some(Keine90)));
+        assert_eq!(false, hat_re_gewonnen(0, 240, ansage_re, Some(Keine90)));
+
+        assert_eq!(true, hat_re_gewonnen(240, 0, ansage_re, Some(Keine60)));
+        assert_eq!(true, hat_re_gewonnen(185, 55, ansage_re, Some(Keine60)));
+        assert_eq!(true, hat_re_gewonnen(155, 85, ansage_re, Some(Keine60)));
+        assert_eq!(true, hat_re_gewonnen(121, 119, ansage_re, Some(Keine60)));
+        assert_eq!(true, hat_re_gewonnen(120, 120, ansage_re, Some(Keine60)));
+        assert_eq!(true, hat_re_gewonnen(119, 121, ansage_re, Some(Keine60)));
+        assert_eq!(true, hat_re_gewonnen(60, 180, ansage_re, Some(Keine60)));
+        assert_eq!(false, hat_re_gewonnen(59, 181, ansage_re, Some(Keine60)));
+        assert_eq!(false, hat_re_gewonnen(41, 199, ansage_re, Some(Keine60)));
+        assert_eq!(false, hat_re_gewonnen(0, 240, ansage_re, Some(Keine60)));
+
+        assert_eq!(true, hat_re_gewonnen(240, 0, ansage_re, Some(Keine30)));
+        assert_eq!(true, hat_re_gewonnen(215, 25, ansage_re, Some(Keine30)));
+        assert_eq!(true, hat_re_gewonnen(185, 55, ansage_re, Some(Keine30)));
+        assert_eq!(true, hat_re_gewonnen(155, 85, ansage_re, Some(Keine30)));
+        assert_eq!(true, hat_re_gewonnen(121, 119, ansage_re, Some(Keine30)));
+        assert_eq!(true, hat_re_gewonnen(120, 120, ansage_re, Some(Keine30)));
+        assert_eq!(true, hat_re_gewonnen(119, 121, ansage_re, Some(Keine30)));
+        assert_eq!(true, hat_re_gewonnen(41, 199, ansage_re, Some(Keine30)));
+        assert_eq!(true, hat_re_gewonnen(30, 210, ansage_re, Some(Keine30)));
+        assert_eq!(false, hat_re_gewonnen(29, 211, ansage_re, Some(Keine30)));
+        assert_eq!(false, hat_re_gewonnen(0, 240, ansage_re, Some(Keine30)));
+
+        assert_eq!(true, hat_re_gewonnen(240, 0, ansage_re, Some(Schwarz)));
+        assert_eq!(true, hat_re_gewonnen(215, 25, ansage_re, Some(Schwarz)));
+        assert_eq!(true, hat_re_gewonnen(185, 55, ansage_re, Some(Schwarz)));
+        assert_eq!(true, hat_re_gewonnen(155, 85, ansage_re, Some(Schwarz)));
+        assert_eq!(true, hat_re_gewonnen(121, 119, ansage_re, Some(Schwarz)));
+        assert_eq!(true, hat_re_gewonnen(120, 120, ansage_re, Some(Schwarz)));
+        assert_eq!(true, hat_re_gewonnen(119, 121, ansage_re, Some(Schwarz)));
+        assert_eq!(true, hat_re_gewonnen(41, 199, ansage_re, Some(Schwarz)));
+        assert_eq!(true, hat_re_gewonnen(1, 239, ansage_re, Some(Schwarz)));
+        assert_eq!(false, hat_re_gewonnen(0, 240, ansage_re, Some(Schwarz)));
+    }
 }
