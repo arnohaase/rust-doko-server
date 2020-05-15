@@ -16,6 +16,8 @@ pub enum SoloArt {
 pub struct RegelVariante {
     pub mit_neunen: bool,
     pub zweite_sticht_erste: bool,
+
+    pub nomale_spiele_as_nullsumme: bool,
 }
 impl RegelVariante {
     pub fn kartensatz(&self) -> Vec<Karte> {
