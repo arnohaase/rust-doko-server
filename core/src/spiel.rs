@@ -2,7 +2,7 @@ use crate::karte::Karte;
 use crate::regelsatz::{SoloArt, Regelsatz, RegelsatzRegistry, RegelVariante, kartenwert};
 use std::sync::Arc;
 use std::error::Error;
-use crate::spiel::SpielerAktionError::{NichtAnDerReihe, SoloAnsagenNochNichtVorbei, SoloAnsagenVorbei, KarteNichtAufDerHand, NichtBedient};
+use crate::spiel::SpielerAktionError::{NichtAnDerReihe, SoloAnsagenNochNichtVorbei, SoloAnsagenVorbei, KarteNichtAufDerHand, NichtBedient, SpielerIstNichtContra};
 use crate::karte::Hoehe::*;
 use crate::karte::Farbe::*;
 use std::ops::Add;
@@ -91,6 +91,8 @@ pub struct Spiel  {
 
     is_re: [bool;4],
 
+    gefangene_fuechse: [Vec<SpielerNummer>;4],
+
     /// Wer spielt den ersten Stich (regulaer) auf (Ausnahme bei Solo)
     erster_spieler: SpielerNummer,
     journal: Vec<SpielerAktion>,
@@ -105,6 +107,7 @@ pub struct Spiel  {
 
 impl Spiel {
     const KREUZ_DAME: Karte = Karte {farbe: Kreuz, hoehe: Dame};
+    const FUCHS: Karte = Karte {farbe: Karo, hoehe: As};
 
     pub fn new(regel_registry: Arc<RegelsatzRegistry>, erster_spieler: u8) -> Spiel {
         assert!(erster_spieler < 4);
@@ -140,6 +143,8 @@ impl Spiel {
                 k2.contains(&Spiel::KREUZ_DAME),
                 k3.contains(&Spiel::KREUZ_DAME),
                 k4.contains(&Spiel::KREUZ_DAME)],
+
+            gefangene_fuechse: [vec![], vec![], vec![], vec![]],
 
             erster_spieler: SpielerNummer {idx: erster_spieler},
             journal: vec![],
@@ -269,10 +274,20 @@ impl Spiel {
                     }
 
                     // der Gewinnder des Stichs kommt im nächsten Stich heraus
-                    self.naechster_spieler = self.naechster_spieler + hoechster_idx;
+                    let stich_gewinner = self.naechster_spieler + hoechster_idx;
 
-                    self.stiche[self.naechster_spieler.as_usize()].extend_from_slice(&self.aktueller_stich);
+                    self.stiche[stich_gewinner.as_usize()].extend_from_slice(&self.aktueller_stich);
+
+                    if self.regelsatz_registry.variante.fuchs_gefangen {
+                        for i in 0..4 {
+                            if self.aktueller_stich[i] == Spiel::FUCHS {
+                                self.gefangene_fuechse[stich_gewinner.as_usize()].push(self.naechster_spieler + i);
+                            }
+                        }
+                    }
+
                     self.aktueller_stich.clear();
+                    self.naechster_spieler = stich_gewinner;
 
                     if self.handkarten[0].is_empty() {
                         self.is_spiel_beendet = true;
@@ -375,6 +390,29 @@ impl Spiel {
     }
 
 
+    //TODO reichere Abstraktion 'Stich' mit gespielter Karte je Spieler, 'wer hat aufgespielt', 'wer hat den Stich bekommen'?
+    fn fuchs_gefangen_punkte(&self, hat_re_gewonnen: bool) -> i32 {
+        let mut result = 0;
+        
+        if self.regelsatz_registry.variante.fuchs_gefangen {
+            for i in 0..4 {
+                let spieler = SpielerNummer {idx: i as u8};
+
+                for fuchs_quelle in self.gefangene_fuechse[i].iter() {
+                    if self.is_re[i] != self.is_re[fuchs_quelle.as_usize()] {
+                        if hat_re_gewonnen == self.is_re[i] {
+                            result += 1;
+                        }
+                        else {
+                            result -= 1;
+                        }
+                    }
+                }
+            }
+        }
+        result
+    }
+
     /// None wenn das Spiel noch nicht beendet ist
     pub fn ergebnis(&self) -> Option<SpielErgebnis> {
         if !self.is_spiel_beendet {
@@ -386,17 +424,22 @@ impl Spiel {
 
         let hat_re_gewonnen = hat_re_gewonnen(kartensumme_re, kartensumme_contra, self.ansage_re, self.ansage_contra);
 
-        let mut punkte = Spiel::punkte_durch_ansagen(self.ansage_re)
-          + Spiel::punkte_durch_ansagen(self.ansage_contra);
+        let mut punkte = (
+            Spiel::punkte_durch_ansagen(self.ansage_re)
+          + Spiel::punkte_durch_ansagen(self.ansage_contra)
+        ) as i32;
+        
         if !hat_re_gewonnen {
             punkte += 1;
         }
 
-        //TODO Punkte für kartensumme
+        punkte += self.fuchs_gefangen_punkte(hat_re_gewonnen);
         //TODO Sonderpunkte
 
         let mut punkte_re = 0i32;
         let mut punkte_contra = 0i32;
+
+        //TODO Punkte für kartensumme - wie rechnet man das bei Ansagen der Gegner?
 
         if self.solo_spieler.is_none() {
             // normales Spiel

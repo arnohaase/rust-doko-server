@@ -16,6 +16,7 @@ pub enum SoloArt {
 pub struct RegelVariante {
     pub mit_neunen: bool,
     pub zweite_sticht_erste: bool,
+    pub fuchs_gefangen: bool,
 
     pub nomale_spiele_as_nullsumme: bool,
 }
