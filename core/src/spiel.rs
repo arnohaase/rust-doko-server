@@ -153,10 +153,10 @@ impl SpielPhase for VorbehaltPhase {
 
                 if self.an_der_reihe == self.erster_spieler {
                     let is_re = [
-                        self.handkarten[0].contains(&Spiel2::KREUZ_DAME),
-                        self.handkarten[1].contains(&Spiel2::KREUZ_DAME),
-                        self.handkarten[2].contains(&Spiel2::KREUZ_DAME),
-                        self.handkarten[3].contains(&Spiel2::KREUZ_DAME)];
+                        self.handkarten[0].contains(&Spiel::KREUZ_DAME),
+                        self.handkarten[1].contains(&Spiel::KREUZ_DAME),
+                        self.handkarten[2].contains(&Spiel::KREUZ_DAME),
+                        self.handkarten[3].contains(&Spiel::KREUZ_DAME)];
 
 
                     let neue_phase = LaufendesSpiel::new(self.regelsatz_registry.normal(),
@@ -301,7 +301,7 @@ impl SpielPhase for LaufendesSpiel {
                     }
                 }
 
-                let idx = Spiel2::index_of(handkarten, karte)?;
+                let idx = Spiel::index_of(handkarten, karte)?;
                 handkarten.remove(idx);
 
                 self.aktueller_stich.karten.push(karte);
@@ -309,14 +309,6 @@ impl SpielPhase for LaufendesSpiel {
 
                 if self.aktueller_stich.is_komplett() {
                     self.schliesse_stich_ab();
-
-                    // if self.regelsatz_registry.variante.fuchs_gefangen { TODO in die Auswertung am Ende - Stiche durchgehen
-                    //     for i in 0..4 {
-                    //         if self.aktueller_stich[i] == Spiel2::FUCHS {
-                    //             self.gefangene_fuechse[stich_gewinner.as_usize()].push(self.naechster_spieler + i);
-                    //         }
-                    //     }
-                    // }
 
                     if self.handkarten[0].is_empty() {
                         let new_phase = Abgeschlossen::new(self);
@@ -445,41 +437,6 @@ impl Abgeschlossen {
             hat_re_gewonnen,
             spiel.solo_spieler.is_some(),
             spiel.regelvariante.nomale_spiele_as_nullsumme);
-
-
-
-        // if spiel.solo_spieler.is_none() {
-        //     // normales Spiel
-        //
-        //     if spiel.regelvariante.nomale_spiele_as_nullsumme {
-        //         punkte_re = punkte as i32;
-        //         if ! hat_re_gewonnen {
-        //             punkte_re = - punkte_re
-        //         }
-        //         punkte_contra = -punkte_re;
-        //     }
-        //     else {
-        //         if hat_re_gewonnen {
-        //             punkte_re = punkte as i32;
-        //         }
-        //         else {
-        //             punkte_contra = punkte as i32;
-        //         }
-        //     }
-        // }
-        // else {
-        //     // Solo
-        //     punkte_contra = punkte as i32;
-        //
-        //     if hat_re_gewonnen {
-        //         punkte_contra = -(punkte as i32);
-        //     }
-        //     else {
-        //         punkte_contra = punkte as i32;
-        //     }
-        //
-        //     punkte_re = 3*punkte_contra;
-        // }
 
         let mut re_spieler = vec![];
         let mut contra_spieler = vec![];
@@ -640,163 +597,19 @@ impl Spiel {
         }
     }
 
-     pub fn spieler_aktion(&mut self, aktion: SpielerAktion) -> Result<(), SpielerAktionError> {
-         let a = self.phase.spieler_aktion(aktion)?;
-         self.journal.push(aktion);
-
-         match self.phase.spieler_aktion(aktion)? {
-             None => {
-             },
-             Some(new_phase) => {
-                 self.phase = new_phase;
-             }
-         }
-
-         Ok(())
-     }
-}
-
-pub struct Spiel2 {
-    regelsatz: Box<dyn Regelsatz>,
-    regelsatz_registry: Arc<RegelsatzRegistry>,
-
-    solo_ansagen_vorbei: bool,
-    /// Solospieler ist bei angesagtem Solo in self.erster_spieler
-    angesagtes_solo: Option<SoloArt>,
-    solo_spieler: Option<SpielerNummer>,
-
-    ansage_re: Option<AnsageHoehe>,
-    ansage_contra: Option<AnsageHoehe>,
-
-    anzahl_gespielte_karten: usize,
-    /// Maximalzahl gespielter Karten, bis zu der eine (weitere) Ansage möglich ist
-    naechste_ansage_moeglich_bis: usize,
-    is_spiel_beendet: bool,
-
-    is_re: [bool;4],
-
-    gefangene_fuechse: [Vec<SpielerNummer>;4],
-
-    /// Wer spielt den ersten Stich (regulaer) auf (Ausnahme bei Solo)
-    erster_spieler: SpielerNummer,
-    journal: Vec<SpielerAktion>,
-    handkarten: [Vec<Karte>;4],
-    stiche: Vec<Stich>,
-
-    aktueller_stich: Stich,
-}
-
-impl Spiel2 {
-    const KREUZ_DAME: Karte = Karte {farbe: Kreuz, hoehe: Dame};
-    const FUCHS: Karte = Karte {farbe: Karo, hoehe: As};
-
-    pub fn new(regel_registry: Arc<RegelsatzRegistry>, erster_spieler: u8) -> Spiel2 {
-        assert!(erster_spieler < 4);
-        let erster_spieler = SpielerNummer {idx: erster_spieler};
-
-        use rand::thread_rng;
-        use rand::seq::SliceRandom;
-        let mut kartensatz = regel_registry.variante.kartensatz();
-        kartensatz.shuffle(&mut thread_rng()); //TODO Seed zum Reproduzieren
-
-        let mut chunks = kartensatz.chunks(kartensatz.len()/4);
-        let k1 = chunks.next().unwrap().to_vec();
-        let k2 = chunks.next().unwrap().to_vec();
-        let k3 = chunks.next().unwrap().to_vec();
-        let k4 = chunks.next().unwrap().to_vec();
-
-        Spiel2 {
-            regelsatz: regel_registry.normal(),
-            regelsatz_registry: regel_registry,
-
-            solo_ansagen_vorbei: false,
-            angesagtes_solo: None,
-            solo_spieler: None,
-
-            ansage_re: None,
-            ansage_contra: None,
-            anzahl_gespielte_karten: 0,
-            naechste_ansage_moeglich_bis: 5,
-
-            is_spiel_beendet: false,
-
-            is_re: [
-                k1.contains(&Spiel2::KREUZ_DAME),
-                k2.contains(&Spiel2::KREUZ_DAME),
-                k3.contains(&Spiel2::KREUZ_DAME),
-                k4.contains(&Spiel2::KREUZ_DAME)],
-
-            gefangene_fuechse: [vec![], vec![], vec![], vec![]],
-
-            erster_spieler,
-            journal: vec![],
-            handkarten: [k1, k2, k3, k4],
-            stiche: vec![],
-            aktueller_stich: Stich::new(erster_spieler),
-        }
-    }
-
-    /// Diese Methode ist das komplette API, durch das Spieler (echte oder KIs) mit einem
-    ///  laufenden Spiel interagieren können. Aktionen werden darauf überprüft, ob sie regelkonform
-    ///  sind, zum aktuellen Zeitpunkt möglich sind und der Spieler gerade an der Reihe ist.
-    pub fn spieler_aktion(&mut self, aktion: SpielerAktion) -> Result<(),SpielerAktionError>{
-        if !self.solo_ansagen_vorbei {
-            self.spieler_aktion_solo_ansagen(aktion)
-        }
-        else {
-            self.spieler_aktion_regulaer(aktion)
-        }
-    }
-
-    // fn naechster_spieler(&mut self) {
-    //     self.naechster_spieler = self.naechster_spieler.naechster();
-    // }
-
-    fn push_aktion(&mut self, aktion: SpielerAktion) -> Result<(), SpielerAktionError> {
+    pub fn spieler_aktion(&mut self, aktion: SpielerAktion) -> Result<(), SpielerAktionError> {
+        let a = self.phase.spieler_aktion(aktion)?;
         self.journal.push(aktion);
-        Ok(())
-    }
 
-    fn spieler_aktion_solo_ansagen(&mut self, aktion: SpielerAktion) -> Result<(),SpielerAktionError> {
-        match aktion {
-            SpielerAktion::Solo(spieler, Some(solo_art)) => {
-                self.check_an_der_reihe(spieler)?;
-
-                self.solo_ansagen_vorbei = true;
-                self.angesagtes_solo = Some(solo_art);
-                self.solo_spieler = Some(spieler);
-                self.erster_spieler = spieler;
-                //TODO self.naechster_spieler = spieler;
-                self.regelsatz = self.regelsatz_registry.solo(solo_art);
-
-                self.is_re = [false, false, false, false];
-                self.is_re[spieler.as_usize()] = true;
-
-                self.push_aktion(aktion)
-            }
-            SpielerAktion::Solo(spieler, None) => {
-                self.check_an_der_reihe(spieler)?;
-                //TODO self.naechster_spieler();
-
-                //TODO
-                // if self.naechster_spieler == self.erster_spieler {
-                //     self.solo_ansagen_vorbei = true;
-                // }
-                self.push_aktion(aktion)
+        match self.phase.spieler_aktion(aktion)? {
+            None => {
             },
-            _ => {
-                Err(SoloAnsagenNochNichtVorbei)
+            Some(new_phase) => {
+                self.phase = new_phase;
             }
         }
-    }
 
-    fn check_an_der_reihe(&self, spieler: SpielerNummer) -> Result<(), SpielerAktionError> {
-        if spieler == self.aktueller_stich.naechster_spieler() {
-            Ok(())
-        }
-        else {
-            Err(NichtAnDerReihe)
-        }
+        Ok(())
     }
 
     fn index_of(karten: &Vec<Karte>, karte: Karte) -> Result<usize, SpielerAktionError> {
@@ -805,295 +618,6 @@ impl Spiel2 {
         }
         else {
             Err(KarteNichtAufDerHand)
-        }
-    }
-
-    fn spieler_aktion_regulaer(&mut self, aktion: SpielerAktion) -> Result<(), SpielerAktionError> {
-        use SpielerAktion::*;
-
-        match aktion {
-            Solo(_,_) => Err(SoloAnsagenVorbei),
-            Karte(spieler, karte) => {
-                self.check_an_der_reihe(spieler)?;
-
-                let mut handkarten = &mut self.handkarten[spieler.as_usize()];
-
-                if self.aktueller_stich.karten.len() > 0 {
-                    let stich_karte = *self.aktueller_stich.karten.first().unwrap();
-
-                    let regelsatz = &self.regelsatz;
-
-                    if !regelsatz.bedient(stich_karte, karte)
-                        && handkarten.iter().find(|k| regelsatz.bedient(stich_karte, **k)).is_some() {
-
-                        return Err(NichtBedient);
-                    }
-                }
-
-                let idx = Spiel2::index_of(handkarten, karte)?;
-                handkarten.remove(idx);
-
-                self.aktueller_stich.karten.push(karte);
-                self.anzahl_gespielte_karten += 1;
-
-                self.push_aktion(aktion);
-                if self.aktueller_stich.is_komplett() {
-                    // wer bekommt den Stich?
-
-                    let mut hoechster_idx = 0usize;
-                    let mut hoechste_karte = *self.aktueller_stich.karten.first().unwrap();
-
-                    for i in 1..4 {
-                        if self.regelsatz.ist_hoeher_als(hoechste_karte, *self.aktueller_stich.karten.get(i).unwrap()) {
-                            hoechster_idx = i;
-                            hoechste_karte = *self.aktueller_stich.karten.get(i).unwrap();
-                        }
-                    }
-
-                    // der Gewinnder des Stichs kommt im nächsten Stich heraus
-                    let stich_gewinner = self.erster_spieler; //TODO self.naechster_spieler + hoechster_idx;
-
-                    //TODO
-                    // self.stiche[stich_gewinner.as_usize()].karten.extend_from_slice(&self.aktueller_stich.karten);
-                    //
-                    // if self.regelsatz_registry.variante.fuchs_gefangen {
-                    //     for i in 0..4 {
-                    //         if self.aktueller_stich[i] == Spiel2::FUCHS {
-                    //             self.gefangene_fuechse[stich_gewinner.as_usize()].push(self.naechster_spieler + i);
-                    //         }
-                    //     }
-                    // }
-
-                    // self.aktueller_stich.clear();
-                    // self.naechster_spieler = stich_gewinner;
-
-                    if self.handkarten[0].is_empty() {
-                        self.is_spiel_beendet = true;
-                    }
-
-                    self.push_aktion(aktion)
-                }
-                else {
-                    //TODO ???
-                    Ok(())
-                }
-            },
-            AnsageRe(spieler, hoehe) =>  {
-                self.check_is_re(spieler)?;
-                self.check_ansage_moeglich()?;
-
-                if let Some(alte_hoehe) = self.ansage_re {
-                    if alte_hoehe.limit() <= hoehe.limit() {
-                        return Err(SpielerAktionError::AnsageErhoehtNicht);
-                    }
-                }
-                self.ansage_re = Some(hoehe);
-                self.naechste_ansage_moeglich_bis = self.anzahl_gespielte_karten + 4;
-
-                self.push_aktion(aktion)
-
-            },
-            AnsageContra(spieler, hoehe) =>  {
-                self.check_is_contra(spieler)?;
-                self.check_ansage_moeglich()?;
-
-                if let Some(alte_hoehe) = self.ansage_contra {
-                    if alte_hoehe.limit() <= hoehe.limit() {
-                        return Err(SpielerAktionError::AnsageErhoehtNicht);
-                    }
-                }
-                self.ansage_contra = Some(hoehe);
-                self.naechste_ansage_moeglich_bis = self.anzahl_gespielte_karten + 4;
-
-                self.push_aktion(aktion)
-            },
-        }
-    }
-
-    fn check_is_re(&self, spieler: SpielerNummer) -> Result<(), SpielerAktionError> {
-        if  self.is_re[spieler.as_usize()] {
-            Ok(())
-        }
-        else {
-            Err(SpielerAktionError::SpielerIstNichtRe)
-        }
-    }
-
-    fn check_is_contra(&self, spieler: SpielerNummer) -> Result<(), SpielerAktionError> {
-        if  self.is_re[spieler.as_usize()] {
-            Ok(())
-        }
-        else {
-            Err(SpielerAktionError::SpielerIstNichtContra)
-        }
-    }
-
-    fn check_ansage_moeglich(&self) -> Result<(), SpielerAktionError> {
-        if self.anzahl_gespielte_karten <= self.naechste_ansage_moeglich_bis {
-            Ok(())
-        }
-        else {
-            Err(SpielerAktionError::AnsageZuSpaet)
-        }
-    }
-
-    fn karten_summe_re(&self) -> u32 {
-        let mut result = 0u32;
-
-        for i in 0..4 {
-            if self.is_re[i] {
-                result += self.karten_summe(SpielerNummer { idx: i as u8});
-            }
-        }
-
-        result
-    }
-
-    /// "sollte" am Spielende 240-karten_summe_re sein. Separate Implementierung als Debugging-Hilfe
-    ///  und für Zwischenstände
-    fn karten_summe_contra(&self) -> u32 {
-        let mut result = 0u32;
-
-        for i in 0..4 {
-            if !self.is_re[i] {
-                result += self.karten_summe(SpielerNummer { idx: i as u8});
-            }
-        }
-
-        result
-    }
-
-    fn karten_summe(&self, spieler: SpielerNummer) -> u32 {
-        let mut result = 0u32;
-        //TODO
-        // for karte in &self.stiche[spieler.as_usize()] {
-        //     result += kartenwert(*karte);
-        // }
-        result
-    }
-
-
-    //TODO reichere Abstraktion 'Stich' mit gespielter Karte je Spieler, 'wer hat aufgespielt', 'wer hat den Stich bekommen'?
-    fn fuchs_gefangen_punkte(&self, hat_re_gewonnen: bool) -> i32 {
-        let mut result = 0;
-
-        if self.regelsatz_registry.variante.fuchs_gefangen {
-            for i in 0..4 {
-                let spieler = SpielerNummer {idx: i as u8};
-
-                for fuchs_quelle in self.gefangene_fuechse[i].iter() {
-                    if self.is_re[i] != self.is_re[fuchs_quelle.as_usize()] {
-                        if hat_re_gewonnen == self.is_re[i] {
-                            result += 1;
-                        }
-                        else {
-                            result -= 1;
-                        }
-                    }
-                }
-            }
-        }
-        result
-    }
-
-    /// None wenn das Spiel noch nicht beendet ist
-    pub fn ergebnis(&self) -> Option<Abgeschlossen> {
-        if !self.is_spiel_beendet {
-            return None;
-        }
-
-        let kartensumme_re = self.karten_summe_re();
-        let kartensumme_contra = self.karten_summe_contra();
-
-        let hat_re_gewonnen = hat_re_gewonnen(kartensumme_re, kartensumme_contra, self.ansage_re, self.ansage_contra);
-
-        let mut punkte = (
-            Spiel2::punkte_durch_ansagen(self.ansage_re)
-          + Spiel2::punkte_durch_ansagen(self.ansage_contra)
-        ) as i32;
-        
-        if !hat_re_gewonnen {
-            punkte += 1;
-        }
-
-        punkte += self.fuchs_gefangen_punkte(hat_re_gewonnen);
-        //TODO Sonderpunkte
-
-        let mut punkte_re = 0i32;
-        let mut punkte_contra = 0i32;
-
-        //TODO Punkte für kartensumme - wie rechnet man das bei Ansagen der Gegner?
-
-        if self.solo_spieler.is_none() {
-            // normales Spiel
-
-            if self.regelsatz_registry.variante.nomale_spiele_as_nullsumme {
-                punkte_re = punkte as i32;
-                if ! hat_re_gewonnen {
-                    punkte_re = - punkte_re
-                }
-                punkte_contra = -punkte_re;
-            }
-            else {
-                if hat_re_gewonnen {
-                    punkte_re = punkte as i32;
-                }
-                else {
-                    punkte_contra = punkte as i32;
-                }
-            }
-        }
-        else {
-            // Solo
-            punkte_contra = punkte as i32;
-
-            if hat_re_gewonnen {
-                punkte_contra = -(punkte as i32);
-            }
-            else {
-                punkte_contra = punkte as i32;
-            }
-
-            punkte_re = 3*punkte_contra;
-        }
-
-        let mut re_spieler = vec![];
-        let mut contra_spieler = vec![];
-
-        for i in 0..4 {
-            let s = SpielerNummer {idx: i as u8 };
-
-            if self.is_re[i] {
-                re_spieler.push(s);
-            }
-            else {
-                contra_spieler.push(s);
-            }
-        }
-
-        Some(Abgeschlossen {
-            hat_re_gewonnen,
-            re_spieler,
-            contra_spieler,
-            solo_spieler: self.solo_spieler,
-            kartensumme_re,
-            kartensumme_contra,
-            punkte_re,
-            punkte_contra,
-        })
-
-    }
-
-    fn punkte_durch_ansagen(ansage: Option<AnsageHoehe>) -> u32 {
-        use AnsageHoehe::*;
-
-        match ansage {
-            None => 0,
-            Some(Sieg) => 1,
-            Some(Keine90) => 2,
-            Some(Keine60) => 3,
-            Some(Keine30) => 4,
-            Some(Schwarz) => 5,
         }
     }
 }
