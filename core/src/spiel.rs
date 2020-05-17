@@ -428,7 +428,9 @@ impl Abgeschlossen {
         score.add_sieger(Self::punkte_durch_ansagen(spiel.ansage_re));
         score.add_sieger(Self::punkte_durch_ansagen(spiel.ansage_contra));
 
-        //TODO Punkte für kartensumme - wie rechnet man das bei Ansagen der Gegner?
+        let (punkte_fuer_karten_re, punkte_fuer_karten_contra) = Self::punkte_fuer_kartensumme(kartensumme_re, kartensumme_contra);
+        score.add_re(punkte_fuer_karten_re);
+        score.add_contra(punkte_fuer_karten_contra);
 
         // Sonderpunkte
         if spiel.regelvariante.fuchs_gefangen {
@@ -465,6 +467,23 @@ impl Abgeschlossen {
             punkte_re,
             punkte_contra,
         }
+    }
+
+    fn punkte_fuer_kartensumme(kartensumme_re: u32, kartensumme_contra: u32) -> (i32,i32) {
+        let mut punkte_re = 0;
+        let mut punkte_contra = 0;
+
+        if kartensumme_re < 90 {punkte_contra += 1;}
+        if kartensumme_re < 60 {punkte_contra += 1;}
+        if kartensumme_re < 30 {punkte_contra += 1;}
+        if kartensumme_re == 0 {punkte_contra += 1;}
+
+        if kartensumme_contra < 90 {punkte_re += 1;}
+        if kartensumme_contra < 60 {punkte_re += 1;}
+        if kartensumme_contra < 30 {punkte_re += 1;}
+        if kartensumme_contra == 0 {punkte_re += 1;}
+
+        (punkte_re, punkte_contra)
     }
 
     fn score_fuchs_gefangen(stiche: &Vec<Stich>, is_re: [bool;4], score: &mut SpielScore) {
