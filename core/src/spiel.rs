@@ -1,11 +1,13 @@
 use crate::karte::Karte;
-use crate::regelsatz::{SoloArt, Regelsatz, RegelsatzRegistry, RegelVariante, kartenwert};
+use crate::regelsatz::{SoloArt, Regelsatz, RegelsatzRegistry, RegelVariante, kartenwert, HochzeitMitWem};
 use std::sync::Arc;
 use std::error::Error;
-use crate::spiel::SpielerAktionError::{NichtAnDerReihe, SoloAnsagenNochNichtVorbei, SoloAnsagenVorbei, KarteNichtAufDerHand, NichtBedient, SpielerIstNichtContra, SpielIstAbgeschlossen};
+use crate::spiel::SpielerAktionError::*;
 use crate::karte::Hoehe::*;
 use crate::karte::Farbe::*;
 use std::ops::Add;
+use std::alloc::handle_alloc_error;
+use std::rc::Rc;
 
 
 #[derive(Copy,Clone,Eq,PartialEq)]
@@ -59,7 +61,7 @@ impl AnsageHoehe {
 pub enum SpielerAktion {
     /// 'kein Solo' muss ausdrücklich gemeldet werden - 'None' bedeuetet kein Solo
     Solo(SpielerNummer, Option<SoloArt>),
-    //TODO Hochzeit
+    Hochzeit(SpielerNummer, Option<HochzeitMitWem>),
     Karte(SpielerNummer, Karte),
     AnsageRe(SpielerNummer, AnsageHoehe),
     AnsageContra(SpielerNummer, AnsageHoehe),
@@ -69,10 +71,14 @@ pub enum SpielerAktionError {
     NichtAnDerReihe,
     SoloAnsagenNochNichtVorbei,
     SoloAnsagenVorbei,
+    HochzeitAnsagenVorbei,
+    HochzeitAnsagenErstNachSoloAnsagen,
+    HochzeitBrauchtZweiKreuzDamen,
     KarteNichtAufDerHand,
     NichtBedient,
     SpielerIstNichtRe,
     SpielerIstNichtContra,
+    AnsageErstNachHochzeitKlaerung,
     AnsageZuSpaet,
     AnsageErhoehtNicht,
     SpielIstAbgeschlossen,
@@ -126,6 +132,7 @@ struct VorbehaltPhase {
     handkarten: [Vec<Karte>;4],
     erster_spieler: SpielerNummer,
     an_der_reihe: SpielerNummer,
+    is_solo_runde: bool,
 }
 impl VorbehaltPhase {
     fn check_an_der_reihe(&self, spieler: SpielerNummer) -> Result<(), SpielerAktionError> {
@@ -136,12 +143,23 @@ impl VorbehaltPhase {
             Err(NichtAnDerReihe)
         }
     }
+
+    fn check_solo_runde(&self, solo: bool) -> Result<(), SpielerAktionError> {
+        match (self.is_solo_runde, solo) {
+            (true, false) => Err(HochzeitAnsagenErstNachSoloAnsagen),
+            (false, true) => Err(SoloAnsagenVorbei),
+            _ => Ok(())
+        }
+    }
 }
 impl SpielPhase for VorbehaltPhase {
     fn spieler_aktion(&mut self, aktion: SpielerAktion) -> Result<Option<Box<dyn SpielPhase>>, SpielerAktionError> {
+        self.check_an_der_reihe(self.an_der_reihe)?;
+
         match aktion {
+            //TODO Letzte Chance für Pflichtsolo
             SpielerAktion::Solo(spieler, Some(solo_art)) => {
-                self.check_an_der_reihe(spieler)?;
+                self.check_solo_runde(true)?;
 
                 let regelsatz = self.regelsatz_registry.solo(solo_art);
 
@@ -150,14 +168,43 @@ impl SpielPhase for VorbehaltPhase {
 
                 let neue_phase = LaufendesSpiel::new(regelsatz,
                                                      self.regelsatz_registry.variante,
-                                                     &self.handkarten, Some(solo_art), Some(spieler), is_re, spieler);
+                                                     &self.handkarten,
+                                                     Some(SpielBesonderheit::Solo(solo_art, spieler)),
+                                                     is_re,
+                                                     spieler);
                 Ok(Some(Box::new(neue_phase)))
             }
             SpielerAktion::Solo(spieler, None) => {
-                self.check_an_der_reihe(spieler)?;
+                self.check_solo_runde(true)?;
 
                 self.an_der_reihe = self.an_der_reihe.naechster();
 
+                if self.an_der_reihe == self.erster_spieler {
+                    self.is_solo_runde = false; // jetzt kommen die Hochzeits-Ansagen
+                }
+                Ok(None)
+            },
+            SpielerAktion::Hochzeit(spieler, Some(mit_wem)) => {
+                self.check_solo_runde(false)?;
+
+                if self.handkarten[spieler.as_usize()].iter().filter(|k| **k == Spiel::KREUZ_DAME).count() != 2 {
+                    return Err(HochzeitBrauchtZweiKreuzDamen);
+                }
+
+                let neue_phase = HochzeitKlaeren::new(
+                    self.regelsatz_registry.normal(),
+                    self.regelsatz_registry.variante,
+                    &self.handkarten,
+                    spieler,
+                    mit_wem,
+                    self.erster_spieler);
+                Ok(Some(Box::new(neue_phase)))
+            },
+            SpielerAktion::Hochzeit(spieler, None) => {
+                self.check_solo_runde(false)?;
+                self.an_der_reihe = self.an_der_reihe.naechster();
+
+                // kein Solo, keine Hochzeit
                 if self.an_der_reihe == self.erster_spieler {
                     let is_re = [
                         self.handkarten[0].contains(&Spiel::KREUZ_DAME),
@@ -165,11 +212,9 @@ impl SpielPhase for VorbehaltPhase {
                         self.handkarten[2].contains(&Spiel::KREUZ_DAME),
                         self.handkarten[3].contains(&Spiel::KREUZ_DAME)];
 
-
                     let neue_phase = LaufendesSpiel::new(self.regelsatz_registry.normal(),
                                                          self.regelsatz_registry.variante,
                                                          &self.handkarten,
-                                                         None,
                                                          None,
                                                          is_re,
                                                          self.erster_spieler);
@@ -186,13 +231,163 @@ impl SpielPhase for VorbehaltPhase {
     }
 }
 
+struct HochzeitKlaeren {
+    regelsatz: Rc<dyn Regelsatz>,
+    variante: RegelVariante,
+
+    handkarten: [Vec<Karte>;4],
+    hochzeit_spieler: SpielerNummer,
+    mit_wem: HochzeitMitWem,
+
+    stiche: Vec<Stich>,
+    aktueller_stich: Stich,
+
+    erster_spieler: SpielerNummer,
+}
+impl HochzeitKlaeren {
+    fn new(regelsatz: Rc<dyn Regelsatz>, variante: RegelVariante,
+           handkarten: &[Vec<Karte>;4], hochzeit_spieler: SpielerNummer, mit_wem: HochzeitMitWem,
+           erster_spieler: SpielerNummer) -> HochzeitKlaeren {
+
+        HochzeitKlaeren {
+            regelsatz,
+            variante,
+            handkarten: handkarten.clone(),
+            hochzeit_spieler,
+            mit_wem,
+            stiche: vec![],
+            aktueller_stich: Stich::new(erster_spieler),
+            erster_spieler,
+        }
+    }
+
+    fn check_an_der_reihe(&self, spieler: SpielerNummer) -> Result<(), SpielerAktionError> {
+        if spieler == self.aktueller_stich.naechster_spieler() {
+            Ok(())
+        }
+        else {
+            Err(NichtAnDerReihe)
+        }
+    }
+
+    fn schliesse_stich_ab(&mut self) {
+        let mut hoechster_idx = 0usize;
+        let mut hoechste_karte = *self.aktueller_stich.karten.first().unwrap();
+
+        for i in 1..4 {
+            if self.regelsatz.ist_hoeher_als(hoechste_karte, *self.aktueller_stich.karten.get(i).unwrap()) {
+                hoechster_idx = i;
+                hoechste_karte = *self.aktueller_stich.karten.get(i).unwrap();
+            }
+        }
+
+        self.aktueller_stich.gewonnen_von = self.aktueller_stich.aufgespielt_von + hoechster_idx;
+        self.stiche.push(self.aktueller_stich.clone());
+
+        self.aktueller_stich = Stich::new(self.aktueller_stich.gewonnen_von);
+    }
+
+    fn is_hochzeit_geklaert(&self) -> Option<SpielerNummer> {
+        let letzter_stich = self.stiche.last().unwrap();
+
+        match self.mit_wem {
+            HochzeitMitWem::ErsterFremder => {
+                if letzter_stich.gewonnen_von != self.hochzeit_spieler {
+                    Some(letzter_stich.gewonnen_von)
+                }
+                else {
+                    None
+                }
+            }
+        }
+    }
+}
+impl SpielPhase for HochzeitKlaeren {
+    fn spieler_aktion(&mut self, aktion: SpielerAktion) -> Result<Option<Box<dyn SpielPhase>>, SpielerAktionError> {
+        use SpielerAktion::*;
+
+        match aktion {
+            Solo(_,_) => return Err(SoloAnsagenVorbei),
+            Hochzeit(_,_) => return Err(HochzeitAnsagenVorbei),
+            Karte(spieler, karte) => {
+                self.check_an_der_reihe(spieler)?;
+
+                let mut handkarten = &mut self.handkarten[spieler.as_usize()];
+
+                if self.aktueller_stich.karten.len() > 0 {
+                    let stich_karte = *self.aktueller_stich.karten.first().unwrap();
+
+                    let regelsatz = &self.regelsatz;
+
+                    if !regelsatz.bedient(stich_karte, karte)
+                        && handkarten.iter().find(|k| regelsatz.bedient(stich_karte, **k)).is_some() {
+
+                        return Err(NichtBedient);
+                    }
+                }
+
+                let idx = Spiel::index_of(handkarten, karte)?;
+                handkarten.remove(idx);
+
+                self.aktueller_stich.karten.push(karte);
+
+                if self.aktueller_stich.is_komplett() {
+                    self.schliesse_stich_ab();
+
+                    if let Some(partner) = self.is_hochzeit_geklaert() {
+                        let mut is_re = [false,false,false,false];
+                        is_re[self.hochzeit_spieler.as_usize()] = true;
+                        is_re[partner.as_usize()] = true;
+
+                        let new_phase = LaufendesSpiel::new(
+                            self.regelsatz.clone(),
+                            self.variante,
+                            &self.handkarten,
+                            Some(SpielBesonderheit::Hochzeit(self.hochzeit_spieler, self.mit_wem, partner)),
+                            is_re,
+                            self.aktueller_stich.gewonnen_von,
+                        );
+                        return Ok(Some(Box::new(new_phase)));
+                    }
+
+                    if self.stiche.len() == 3 {
+                        // Hochzeit endgültig nicht geklärt -> unfreiwilliges Solo
+
+                        let mut is_re = [false,false,false,false];
+                        is_re[self.hochzeit_spieler.as_usize()] = true;
+
+                        let new_phase = LaufendesSpiel::new(
+                            self.regelsatz.clone(),
+                            self.variante,
+                            &self.handkarten,
+                            Some(SpielBesonderheit::GescheiterteHochzeit(self.hochzeit_spieler, self.mit_wem)),
+                            is_re,
+                            self.aktueller_stich.gewonnen_von,
+                        );
+                        return Ok(Some(Box::new(new_phase)));
+                    }
+                }
+            },
+            AnsageRe(_,_) => return Err(AnsageErstNachHochzeitKlaerung), //TODO Regeln prüfen
+            AnsageContra(_,_) => return Err(AnsageErstNachHochzeitKlaerung),
+        }
+        Ok(None)
+    }
+}
+
+/// Zur Info am Ende
+#[derive(Copy,Clone)]
+pub enum SpielBesonderheit {
+    Solo(SoloArt, SpielerNummer),
+    Hochzeit(SpielerNummer, HochzeitMitWem, SpielerNummer),
+    GescheiterteHochzeit(SpielerNummer, HochzeitMitWem),
+}
 
 struct LaufendesSpiel {
-    regelsatz: Box<dyn Regelsatz>,
-    regelvariante: RegelVariante,
+    regelsatz: Rc<dyn Regelsatz>,
+    variante: RegelVariante,
 
-    angesagtes_solo: Option<SoloArt>,
-    solo_spieler: Option<SpielerNummer>,
+    besonderheit: Option<SpielBesonderheit>,
 
     ansage_re: Option<AnsageHoehe>,
     ansage_contra: Option<AnsageHoehe>,
@@ -205,22 +400,20 @@ struct LaufendesSpiel {
 
     handkarten: [Vec<Karte>;4],
     stiche: Vec<Stich>,
-
     aktueller_stich: Stich,
 }
 impl LaufendesSpiel {
-    fn new(regelsatz: Box<dyn Regelsatz>,
-           regelvariante: RegelVariante,
+    fn new(regelsatz: Rc<dyn Regelsatz>,
+           variante: RegelVariante,
            handkarten: &[Vec<Karte>;4],
-           angesagtes_solo: Option<SoloArt>, solo_spieler: Option<SpielerNummer>, //TODO zusammenfassen in 'solo'-Datenstruktur
+           besonderheit: Option<SpielBesonderheit>,
            is_re: [bool;4],
            erstes_aufspiel: SpielerNummer
     ) -> LaufendesSpiel {
         LaufendesSpiel {
             regelsatz,
-            regelvariante,
-            angesagtes_solo,
-            solo_spieler,
+            variante,
+            besonderheit,
             ansage_re: None,
             ansage_contra: None,
             anzahl_gespielte_karten: 0,
@@ -291,6 +484,7 @@ impl SpielPhase for LaufendesSpiel {
 
         match aktion {
             Solo(_,_) => return Err(SoloAnsagenVorbei),
+            Hochzeit(_,_) => return Err(HochzeitAnsagenVorbei),
             Karte(spieler, karte) => {
                 self.check_an_der_reihe(spieler)?;
 
@@ -403,11 +597,12 @@ impl SpielScore {
 }
 
 pub struct Abgeschlossen {
+    pub besonderheit: Option<SpielBesonderheit>,
+
     pub sieger: SiegerPartei,
 
     pub re_spieler: Vec<SpielerNummer>,
     pub contra_spieler: Vec<SpielerNummer>,
-    pub solo_spieler: Option<SpielerNummer>,
 
     pub kartensumme_re: u32,
     pub kartensumme_contra: u32,
@@ -433,15 +628,17 @@ impl Abgeschlossen {
         score.add_contra(punkte_fuer_karten_contra);
 
         // Sonderpunkte
-        if spiel.regelvariante.fuchs_gefangen {
+        if spiel.variante.fuchs_gefangen {
             Self::score_fuchs_gefangen(&spiel.stiche, spiel.is_re, &mut score);
         }
         //TODO Weitere Sonderpunkte
 
+        let is_solo = spiel.is_re.iter().filter(|f|**f).count() == 1;
+
         let (punkte_re, punkte_contra) = score.ergebnis(
             sieger,
-            spiel.solo_spieler.is_some(),
-            spiel.regelvariante.nomale_spiele_as_nullsumme);
+            is_solo,
+            spiel.variante.nomale_spiele_as_nullsumme);
 
         let mut re_spieler = vec![];
         let mut contra_spieler = vec![];
@@ -458,10 +655,10 @@ impl Abgeschlossen {
         }
 
         Abgeschlossen {
+            besonderheit: spiel.besonderheit,
             sieger,
             re_spieler,
             contra_spieler,
-            solo_spieler: spiel.solo_spieler,
             kartensumme_re,
             kartensumme_contra,
             punkte_re,
@@ -586,6 +783,7 @@ impl Spiel {
         let phase = VorbehaltPhase {
             regelsatz_registry,
             handkarten: [k1, k2, k3, k4],
+            is_solo_runde: true,
             erster_spieler,
             an_der_reihe: erster_spieler,
         };

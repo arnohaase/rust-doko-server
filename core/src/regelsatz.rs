@@ -3,13 +3,22 @@ use crate::karte::Farbe::*;
 use crate::karte::Hoehe::*;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::rc::Rc;
 
 #[derive(Copy,Clone)]
 pub enum SoloArt {
+    Trumpf,
     FarbsoloKreuz,
     FarbsoloPik,
     FarbsoloHerz,
     FarbsoloKaro,
+}
+
+#[derive(Copy,Clone)]
+pub enum HochzeitMitWem {
+    ErsterFremder,
+    // ErsterFremderTrumpf,
+    // ErsterFremderFehl,
 }
 
 #[derive(Copy,Clone)]
@@ -44,19 +53,22 @@ pub struct RegelsatzRegistry {
     pub variante: RegelVariante,
 }
 impl RegelsatzRegistry {
-    pub fn normal(&self) -> Box<dyn Regelsatz> {
-        Box::new(NormalesSpiel::new (self.variante.zweite_sticht_erste))
+    pub fn normal(&self) -> Rc<dyn Regelsatz> {
+        Rc::new(NormalesSpiel::new (self.variante.zweite_sticht_erste))
     }
 
-    pub fn solo(&self, solo_art: SoloArt) -> Box<dyn Regelsatz> {
+    pub fn solo(&self, solo_art: SoloArt) -> Rc<dyn Regelsatz> {
         use SoloArt::*;
         //TODO gegen 'RegelVariante' prüfen, ob dieses Solo hier vorgesehen ist
-        Box::new(match solo_art {
-            FarbsoloKreuz => Farbsolo{farbe: Kreuz},
-            FarbsoloPik => Farbsolo{farbe: Pik},
-            FarbsoloHerz => Farbsolo{farbe: Herz},
-            FarbsoloKaro => Farbsolo{farbe: Karo},
-        })
+
+
+        match solo_art {
+            Trumpf => Rc::new(NormalesSpiel::new(self.variante.zweite_sticht_erste)),
+            FarbsoloKreuz => Rc::new(Farbsolo{farbe: Kreuz}),
+            FarbsoloPik => Rc::new(Farbsolo{farbe: Pik}),
+            FarbsoloHerz => Rc::new(Farbsolo{farbe: Herz}),
+            FarbsoloKaro => Rc::new(Farbsolo{farbe: Karo}),
+        }
     }
 }
 
