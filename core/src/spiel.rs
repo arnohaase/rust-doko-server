@@ -1,5 +1,5 @@
 use crate::karte::Karte;
-use crate::regelsatz::{SoloArt, Regelsatz, RegelsatzRegistry, RegelVariante, kartenwert, HochzeitMitWem};
+use crate::regelsatz::{SoloArt, StichRegelsatz, RegelsatzRegistry, RegelVariante, kartenwert, HochzeitMitWem};
 use std::sync::Arc;
 use std::error::Error;
 use crate::spiel::SpielerAktionError::*;
@@ -232,7 +232,7 @@ impl SpielPhase for VorbehaltPhase {
 }
 
 struct HochzeitKlaeren {
-    regelsatz: Rc<dyn Regelsatz>,
+    regelsatz: Rc<dyn StichRegelsatz>,
     variante: RegelVariante,
 
     handkarten: [Vec<Karte>;4],
@@ -245,7 +245,7 @@ struct HochzeitKlaeren {
     erster_spieler: SpielerNummer,
 }
 impl HochzeitKlaeren {
-    fn new(regelsatz: Rc<dyn Regelsatz>, variante: RegelVariante,
+    fn new(regelsatz: Rc<dyn StichRegelsatz>, variante: RegelVariante,
            handkarten: &[Vec<Karte>;4], hochzeit_spieler: SpielerNummer, mit_wem: HochzeitMitWem,
            erster_spieler: SpielerNummer) -> HochzeitKlaeren {
 
@@ -384,7 +384,7 @@ pub enum SpielBesonderheit {
 }
 
 struct LaufendesSpiel {
-    regelsatz: Rc<dyn Regelsatz>,
+    regelsatz: Rc<dyn StichRegelsatz>,
     variante: RegelVariante,
 
     besonderheit: Option<SpielBesonderheit>,
@@ -403,7 +403,7 @@ struct LaufendesSpiel {
     aktueller_stich: Stich,
 }
 impl LaufendesSpiel {
-    fn new(regelsatz: Rc<dyn Regelsatz>,
+    fn new(regelsatz: Rc<dyn StichRegelsatz>,
            variante: RegelVariante,
            handkarten: &[Vec<Karte>;4],
            besonderheit: Option<SpielBesonderheit>,

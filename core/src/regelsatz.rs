@@ -53,11 +53,11 @@ pub struct RegelsatzRegistry {
     pub variante: RegelVariante,
 }
 impl RegelsatzRegistry {
-    pub fn normal(&self) -> Rc<dyn Regelsatz> {
+    pub fn normal(&self) -> Rc<dyn StichRegelsatz> {
         Rc::new(NormalesSpiel::new (self.variante.zweite_sticht_erste))
     }
 
-    pub fn solo(&self, solo_art: SoloArt) -> Rc<dyn Regelsatz> {
+    pub fn solo(&self, solo_art: SoloArt) -> Rc<dyn StichRegelsatz> {
         use SoloArt::*;
         //TODO gegen 'RegelVariante' prüfen, ob dieses Solo hier vorgesehen ist
 
@@ -72,7 +72,7 @@ impl RegelsatzRegistry {
     }
 }
 
-pub trait Regelsatz {
+pub trait StichRegelsatz {
     fn is_trumpf(&self, karte: Karte) -> bool;
     fn bedient(&self, karte1: Karte, karte2: Karte) -> bool;
     fn ist_hoeher_als(&self, karte1: Karte, karte2: Karte) -> bool;
@@ -104,7 +104,7 @@ impl NormalesSpiel {
         NormalesSpiel {zweite_sticht_erste, trumpf_ranking}
     }
 }
-impl Regelsatz for NormalesSpiel {
+impl StichRegelsatz for NormalesSpiel {
     fn is_trumpf(&self, karte: Karte) -> bool {
         karte.farbe == Karo ||
             karte.hoehe == Bube ||
@@ -147,7 +147,7 @@ impl Regelsatz for NormalesSpiel {
 pub struct Farbsolo {
     pub farbe: Farbe
 }
-impl Regelsatz for Farbsolo {
+impl StichRegelsatz for Farbsolo {
     fn is_trumpf(&self, karte: Karte) -> bool {
         self.farbe == karte.farbe
     }
