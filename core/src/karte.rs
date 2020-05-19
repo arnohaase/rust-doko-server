@@ -1,5 +1,5 @@
 
-#[derive(Copy,Clone,PartialEq,Eq,Hash)]
+#[derive(Copy,Clone,PartialEq,Eq,Hash,Debug)]
 pub enum Farbe {
     Kreuz,
     Pik,
@@ -7,7 +7,7 @@ pub enum Farbe {
     Karo
 }
 
-#[derive(Copy,Clone,PartialEq,Eq,Hash)]
+#[derive(Copy,Clone,PartialEq,Eq,Hash,Debug)]
 pub enum Hoehe {
     Neun,
     Zehn,
@@ -17,7 +17,7 @@ pub enum Hoehe {
     As
 }
 
-#[derive(Copy,Clone,PartialEq,Eq,Hash)]
+#[derive(Copy,Clone,PartialEq,Eq,Hash,Debug)]
 pub struct Karte {
     pub farbe: Farbe,
     pub hoehe: Hoehe,

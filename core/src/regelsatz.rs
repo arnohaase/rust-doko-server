@@ -4,8 +4,9 @@ use crate::karte::Hoehe::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::rc::Rc;
+use std::fmt::Debug;
 
-#[derive(Copy,Clone)]
+#[derive(Copy,Clone,Debug)]
 pub enum SoloArt {
     Trumpf,
     FarbsoloKreuz,
@@ -14,18 +15,20 @@ pub enum SoloArt {
     FarbsoloKaro,
 }
 
-#[derive(Copy,Clone)]
+#[derive(Copy,Clone,Debug)]
 pub enum HochzeitMitWem {
     ErsterFremder,
     // ErsterFremderTrumpf,
     // ErsterFremderFehl,
 }
 
-#[derive(Copy,Clone)]
+#[derive(Copy,Clone,Debug)]
 pub struct RegelVariante {
     pub mit_neunen: bool,
     pub zweite_sticht_erste: bool,
     pub fuchs_gefangen: bool,
+
+    pub pflichtsolo_alle_n_runden: Option<u32>,
 
     pub nomale_spiele_as_nullsumme: bool,
 }
@@ -49,6 +52,7 @@ impl RegelVariante {
     }
 }
 
+#[derive(Debug)]
 pub struct RegelsatzRegistry {
     pub variante: RegelVariante,
 }
@@ -72,12 +76,13 @@ impl RegelsatzRegistry {
     }
 }
 
-pub trait StichRegelsatz {
+pub trait StichRegelsatz: Debug {
     fn is_trumpf(&self, karte: Karte) -> bool;
     fn bedient(&self, karte1: Karte, karte2: Karte) -> bool;
     fn ist_hoeher_als(&self, karte1: Karte, karte2: Karte) -> bool;
 }
 
+#[derive(Debug)]
 pub struct NormalesSpiel {
     pub zweite_sticht_erste: bool,
     trumpf_ranking: HashMap<Karte, u32>,
@@ -144,6 +149,7 @@ impl StichRegelsatz for NormalesSpiel {
     }
 }
 
+#[derive(Debug)]
 pub struct Farbsolo {
     pub farbe: Farbe
 }

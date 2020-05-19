@@ -10,7 +10,7 @@ use std::alloc::handle_alloc_error;
 use std::rc::Rc;
 
 
-#[derive(Copy,Clone,Eq,PartialEq)]
+#[derive(Copy,Clone,Eq,PartialEq,Debug)]
 pub struct SpielerNummer {
     idx: u8,
 }
@@ -35,7 +35,7 @@ impl Add<usize> for SpielerNummer {
     }
 }
 
-#[derive(Copy,Clone)]
+#[derive(Copy,Clone,Debug)]
 pub enum AnsageHoehe {
     Sieg,
     Keine90,
@@ -57,7 +57,7 @@ impl AnsageHoehe {
     }
 }
 
-#[derive(Copy,Clone)]
+#[derive(Copy,Clone,Debug)]
 pub enum SpielerAktion {
     /// 'kein Solo' muss ausdrücklich gemeldet werden - 'None' bedeuetet kein Solo
     Solo(SpielerNummer, Option<SoloArt>),
@@ -71,6 +71,7 @@ pub enum SpielerAktionError {
     NichtAnDerReihe,
     SoloAnsagenNochNichtVorbei,
     SoloAnsagenVorbei,
+    PflichtsoloJetzt,
     HochzeitAnsagenVorbei,
     HochzeitAnsagenErstNachSoloAnsagen,
     HochzeitBrauchtZweiKreuzDamen,
@@ -91,7 +92,7 @@ pub enum SiegerPartei {
     Unentschieden,
 }
 
-#[derive(Clone)]
+#[derive(Clone,Debug)]
 struct Stich {
     aufgespielt_von: SpielerNummer,
     karten: Vec<Karte>,
@@ -123,12 +124,30 @@ impl Stich {
     }
 }
 
-trait SpielPhase {
-    fn spieler_aktion(&mut self, aktion: SpielerAktion) -> Result<Option<Box<dyn SpielPhase>>, SpielerAktionError>;
+#[derive(Debug)]
+pub enum SpielPhase {
+    VorbehaltPhase(VorbehaltPhase),
+    HochzeitKlaeren(HochzeitKlaeren),
+    LaufendesSpiel(LaufendesSpiel),
+    Abgeschlossen(Abgeschlossen),
+}
+impl SpielPhase {
+    fn spieler_aktion(&mut self, aktion: SpielerAktion) -> Result<Option<SpielPhase>, SpielerAktionError> {
+        use SpielPhase::*;
+
+        match self {
+            VorbehaltPhase(data) => data.spieler_aktion(aktion),
+            HochzeitKlaeren(data) => data.spieler_aktion(aktion),
+            LaufendesSpiel(data) => data.spieler_aktion(aktion),
+            Abgeschlossen(_) => Err(SpielerAktionError::SpielIstAbgeschlossen),
+        }
+    }
 }
 
+#[derive(Debug)]
 struct VorbehaltPhase {
     regelsatz_registry: Arc<RegelsatzRegistry>,
+    pflichtsolo_jetzt: [bool;4],
     handkarten: [Vec<Karte>;4],
     erster_spieler: SpielerNummer,
     an_der_reihe: SpielerNummer,
@@ -151,13 +170,11 @@ impl VorbehaltPhase {
             _ => Ok(())
         }
     }
-}
-impl SpielPhase for VorbehaltPhase {
-    fn spieler_aktion(&mut self, aktion: SpielerAktion) -> Result<Option<Box<dyn SpielPhase>>, SpielerAktionError> {
+
+    fn spieler_aktion(&mut self, aktion: SpielerAktion) -> Result<Option<SpielPhase>, SpielerAktionError> {
         self.check_an_der_reihe(self.an_der_reihe)?;
 
         match aktion {
-            //TODO Letzte Chance für Pflichtsolo
             SpielerAktion::Solo(spieler, Some(solo_art)) => {
                 self.check_solo_runde(true)?;
 
@@ -172,10 +189,14 @@ impl SpielPhase for VorbehaltPhase {
                                                      Some(SpielBesonderheit::Solo(solo_art, spieler)),
                                                      is_re,
                                                      spieler);
-                Ok(Some(Box::new(neue_phase)))
+                Ok(Some(SpielPhase::LaufendesSpiel(neue_phase)))
             }
             SpielerAktion::Solo(spieler, None) => {
                 self.check_solo_runde(true)?;
+
+                if self.pflichtsolo_jetzt[spieler.as_usize()] {
+                    return Err(PflichtsoloJetzt);
+                }
 
                 self.an_der_reihe = self.an_der_reihe.naechster();
 
@@ -198,7 +219,7 @@ impl SpielPhase for VorbehaltPhase {
                     spieler,
                     mit_wem,
                     self.erster_spieler);
-                Ok(Some(Box::new(neue_phase)))
+                Ok(Some(SpielPhase::HochzeitKlaeren(neue_phase)))
             },
             SpielerAktion::Hochzeit(spieler, None) => {
                 self.check_solo_runde(false)?;
@@ -218,7 +239,7 @@ impl SpielPhase for VorbehaltPhase {
                                                          None,
                                                          is_re,
                                                          self.erster_spieler);
-                    Ok(Some(Box::new(neue_phase)))
+                    Ok(Some(SpielPhase::LaufendesSpiel(neue_phase)))
                 }
                 else {
                     Ok(None)
@@ -231,6 +252,7 @@ impl SpielPhase for VorbehaltPhase {
     }
 }
 
+#[derive(Debug)]
 struct HochzeitKlaeren {
     regelsatz: Rc<dyn StichRegelsatz>,
     variante: RegelVariante,
@@ -301,9 +323,8 @@ impl HochzeitKlaeren {
             }
         }
     }
-}
-impl SpielPhase for HochzeitKlaeren {
-    fn spieler_aktion(&mut self, aktion: SpielerAktion) -> Result<Option<Box<dyn SpielPhase>>, SpielerAktionError> {
+
+    fn spieler_aktion(&mut self, aktion: SpielerAktion) -> Result<Option<SpielPhase>, SpielerAktionError> {
         use SpielerAktion::*;
 
         match aktion {
@@ -347,7 +368,7 @@ impl SpielPhase for HochzeitKlaeren {
                             is_re,
                             self.aktueller_stich.gewonnen_von,
                         );
-                        return Ok(Some(Box::new(new_phase)));
+                        return Ok(Some(SpielPhase::LaufendesSpiel(new_phase)));
                     }
 
                     if self.stiche.len() == 3 {
@@ -364,11 +385,11 @@ impl SpielPhase for HochzeitKlaeren {
                             is_re,
                             self.aktueller_stich.gewonnen_von,
                         );
-                        return Ok(Some(Box::new(new_phase)));
+                        return Ok(Some(SpielPhase::LaufendesSpiel(new_phase)));
                     }
                 }
             },
-            AnsageRe(_,_) => return Err(AnsageErstNachHochzeitKlaerung), //TODO Regeln prüfen
+            AnsageRe(_,_) => return Err(AnsageErstNachHochzeitKlaerung), //TODO prüfen, ob das so den Regeln entspricht
             AnsageContra(_,_) => return Err(AnsageErstNachHochzeitKlaerung),
         }
         Ok(None)
@@ -376,13 +397,14 @@ impl SpielPhase for HochzeitKlaeren {
 }
 
 /// Zur Info am Ende
-#[derive(Copy,Clone)]
+#[derive(Copy,Clone,Debug)]
 pub enum SpielBesonderheit {
     Solo(SoloArt, SpielerNummer),
     Hochzeit(SpielerNummer, HochzeitMitWem, SpielerNummer),
     GescheiterteHochzeit(SpielerNummer, HochzeitMitWem),
 }
 
+#[derive(Debug)]
 struct LaufendesSpiel {
     regelsatz: Rc<dyn StichRegelsatz>,
     variante: RegelVariante,
@@ -477,9 +499,8 @@ impl LaufendesSpiel {
 
         self.aktueller_stich = Stich::new(self.aktueller_stich.gewonnen_von);
     }
-}
-impl SpielPhase for LaufendesSpiel {
-    fn spieler_aktion(&mut self, aktion: SpielerAktion) -> Result<Option<Box<dyn SpielPhase>>, SpielerAktionError> {
+
+    fn spieler_aktion(&mut self, aktion: SpielerAktion) -> Result<Option<SpielPhase>, SpielerAktionError> {
         use SpielerAktion::*;
 
         match aktion {
@@ -513,7 +534,7 @@ impl SpielPhase for LaufendesSpiel {
 
                     if self.handkarten[0].is_empty() {
                         let new_phase = Abgeschlossen::new(self);
-                        return Ok(Some(Box::new(new_phase)));
+                        return Ok(Some(SpielPhase::Abgeschlossen(new_phase)));
                     }
                 }
             },
@@ -547,6 +568,7 @@ impl SpielPhase for LaufendesSpiel {
     }
 }
 
+#[derive(Debug)]
 struct SpielScore {
     punkte_re: i32,
     punkte_contra: i32,
@@ -596,6 +618,7 @@ impl SpielScore {
     }
 }
 
+#[derive(Debug)]
 pub struct Abgeschlossen {
     pub besonderheit: Option<SpielBesonderheit>,
 
@@ -751,24 +774,18 @@ impl Abgeschlossen {
     }
 }
 
-impl SpielPhase for Abgeschlossen {
-    fn spieler_aktion(&mut self, aktion: SpielerAktion) -> Result<Option<Box<dyn SpielPhase>>, SpielerAktionError> {
-        Err(SpielerAktionError::SpielIstAbgeschlossen)
-    }
-}
-
-
+#[derive(Debug)]
 pub struct Spiel {
-    // regelsatz_registry: Arc<RegelsatzRegistry>,
     erster_spieler: SpielerNummer,
-    phase: Box<dyn SpielPhase>,
+    pub phase: SpielPhase,
 
     journal: Vec<SpielerAktion>,
 }
 impl Spiel {
     const KREUZ_DAME: Karte = Karte { farbe: Kreuz, hoehe: Dame };
 
-    pub fn new(regelsatz_registry: Arc<RegelsatzRegistry>, erster_spieler: SpielerNummer) -> Spiel {
+    pub fn new(regelsatz_registry: Arc<RegelsatzRegistry>, erster_spieler: SpielerNummer,
+               pflichtsolo_jetzt: [bool;4]) -> Spiel {
         use rand::thread_rng;
         use rand::seq::SliceRandom;
         let mut kartensatz = regelsatz_registry.variante.kartensatz();
@@ -783,6 +800,7 @@ impl Spiel {
         let phase = VorbehaltPhase {
             regelsatz_registry,
             handkarten: [k1, k2, k3, k4],
+            pflichtsolo_jetzt,
             is_solo_runde: true,
             erster_spieler,
             an_der_reihe: erster_spieler,
@@ -790,13 +808,12 @@ impl Spiel {
 
         Spiel {
             erster_spieler,
-            phase: Box::new(phase),
+            phase: SpielPhase::VorbehaltPhase(phase),
             journal: vec![],
         }
     }
 
     pub fn spieler_aktion(&mut self, aktion: SpielerAktion) -> Result<(), SpielerAktionError> {
-        let a = self.phase.spieler_aktion(aktion)?;
         self.journal.push(aktion);
 
         match self.phase.spieler_aktion(aktion)? {

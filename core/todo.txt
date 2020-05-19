@@ -1,6 +1,6 @@
 todo
 ----
-
+* "Server-Rahmen" - Turnierverwaltung, Anbindung von Spielern, ...
 
 
 
