@@ -1,5 +1,5 @@
 use crate::karte::Karte;
-use crate::regelsatz::{SoloArt, StichRegelsatz, RegelsatzRegistry, RegelVariante, kartenwert, HochzeitMitWem};
+use crate::regelsatz::{SoloArt, StichRegelsatz, RegelsatzRegistry, RegelVariante, HochzeitMitWem};
 use std::sync::Arc;
 use std::error::Error;
 use crate::spiel::SpielerAktionError::*;
@@ -118,7 +118,7 @@ impl Stich {
     pub fn punktwert(&self) -> u32 {
         let mut result = 0;
         for karte in &self.karten {
-            result += kartenwert(*karte);
+            result += karte.wert();
         }
         result
     }

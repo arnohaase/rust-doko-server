@@ -144,7 +144,7 @@ impl StichRegelsatz for NormalesSpiel {
             self.trumpf_ranking.get(&karte2) > self.trumpf_ranking.get(&karte1)
         }
         else {
-            kartenwert(karte2) > kartenwert(karte1)
+            karte2.wert() > karte1.wert()
         }
     }
 }
@@ -163,18 +163,6 @@ impl StichRegelsatz for Farbsolo {
     }
 
     fn ist_hoeher_als(&self, karte1: Karte, karte2: Karte) -> bool {
-        kartenwert(karte2) > kartenwert(karte1)
-    }
-}
-
-
-pub fn kartenwert(karte: Karte) -> u32 {
-    match karte.hoehe {
-        Neun => 0,
-        Bube => 2,
-        Dame => 3,
-        Koenig => 4,
-        Zehn => 10,
-        As => 11,
+        karte2.wert() > karte1.wert()
     }
 }
